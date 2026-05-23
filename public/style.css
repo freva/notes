@@ -210,6 +210,8 @@ body { display: flex; }
 }
 
 .md-syntax { color: #c5c5c2; font-weight: normal; }
+.line:not(.active) .md-syntax { display: none; }
+.line a { cursor: pointer; }
 
 .line strong { font-weight: 700; }
 .line em { font-style: italic; }

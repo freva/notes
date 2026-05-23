@@ -664,6 +664,29 @@ editor.addEventListener('blur', () => {
     clearTimeout(saveTimer);
     saveNote();
   }
+  const active = editor.querySelector('.line.active');
+  if (active) active.classList.remove('active');
+});
+
+document.addEventListener('selectionchange', () => {
+  if (isSwitchingNote) return;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.startContainer)) return;
+  const line = findLineDiv(range.startContainer);
+  const prev = editor.querySelector('.line.active');
+  if (prev && prev !== line) prev.classList.remove('active');
+  if (line && !line.classList.contains('active')) line.classList.add('active');
+});
+
+editor.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a');
+  if (a && editor.contains(a)) {
+    e.preventDefault();
+    const href = a.getAttribute('href');
+    if (href) window.open(href, '_blank', 'noopener');
+  }
 });
 
 editorWrap.addEventListener('mousedown', (e) => {
@@ -695,17 +718,16 @@ document.getElementById('new-folder').addEventListener('click', () => createFold
 setupRootDropTarget();
 
 window.addEventListener('beforeunload', () => {
-  if (saveTimer && currentNotePath) {
-    clearTimeout(saveTimer);
-    navigator.sendBeacon &&
-      navigator.sendBeacon(
-        '/api/note',
-        new Blob(
-          [JSON.stringify({ path: currentNotePath, content: getEditorContent() })],
-          { type: 'application/json' }
-        )
-      );
-  }
+  if (!currentNotePath) return;
+  const content = getEditorContent();
+  if (content === lastSavedContent) return;
+  clearTimeout(saveTimer);
+  fetch('/api/note', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: currentNotePath, content }),
+    keepalive: true,
+  });
 });
 
 loadTree();
