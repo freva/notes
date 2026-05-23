@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notes</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<aside id="sidebar">
+  <div class="sidebar-header">
+    <span>Notes</span>
+    <div class="sidebar-actions">
+      <button id="new-note" title="New note">+ Note</button>
+      <button id="new-folder" title="New folder">+ Folder</button>
+    </div>
+  </div>
+  <div id="tree"></div>
+</aside>
+<main id="editor-wrap">
+  <div id="editor" contenteditable="true" spellcheck="true"></div>
+  <div id="empty-state">Select a note or create a new one.</div>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
