@@ -193,6 +193,59 @@ body { display: flex; }
   color: #666;
 }
 
+/* Nesting: only list items carry data-indent, so this never hits headings etc. */
+.line[data-indent] { margin-left: calc(var(--indent, 0) * 1.6em); }
+
+.line[data-type="bullet"][data-indent="1"]::before { content: "◦"; }
+.line[data-type="bullet"][data-indent="2"]::before { content: "▪"; }
+.line[data-type="bullet"][data-indent="3"]::before { content: "•"; }
+.line[data-type="bullet"][data-indent="4"]::before { content: "◦"; }
+.line[data-type="bullet"][data-indent="5"]::before { content: "▪"; }
+
+/* ---------- Checkboxes ---------- */
+
+.line[data-type="todo"] { padding-left: 1.6em; }
+
+.line[data-type="todo"] .checkbox {
+  position: absolute;
+  left: 0.15em;
+  top: 0.32em;
+  width: 1.05em;
+  height: 1.05em;
+  border: 1.5px solid #b8b8b4;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.line[data-type="todo"] .checkbox:hover { border-color: #0a6cff; }
+
+.line[data-type="todo"][data-checked="true"] .checkbox {
+  background: #0a6cff;
+  border-color: #0a6cff;
+}
+
+.line[data-type="todo"][data-checked="true"] .checkbox::after {
+  content: "";
+  position: absolute;
+  left: 0.3em;
+  top: 0.08em;
+  width: 0.25em;
+  height: 0.55em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.line[data-type="todo"][data-checked="true"] {
+  color: #9a9a97;
+  text-decoration: line-through;
+  text-decoration-color: #c9c9c6;
+}
+
 .line[data-type="quote"] {
   border-left: 3px solid #ccc;
   padding-left: 1em;
