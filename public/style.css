@@ -161,6 +161,7 @@ body { display: flex; }
   display: flex;
   flex-direction: column;
   flex: 1;
+  position: relative;
 }
 
 #empty-state {
@@ -361,3 +362,38 @@ body { display: flex; }
 
 /* ProseMirror's own selection affordances. */
 .milkdown .ProseMirror-selectednode { outline: 2px solid #6aa1ff; }
+
+/* ---------- Link prompt (Mod-K) ---------- */
+/*
+ * src/link-prompt.js parks this next to the text and positions it under the
+ * start of the range being linked. While it is open the editor is unfocused,
+ * so the browser stops drawing the selection — .link-prompt-target is the
+ * decoration that stands in for it.
+ */
+
+.link-prompt {
+  position: absolute;
+  z-index: 10;
+  width: 320px;
+  max-width: 100%;
+  padding: 5px;
+  background: #fff;
+  border: 1px solid #d4d4d2;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.link-prompt input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid #d4d4d2;
+  border-radius: 4px;
+  outline: none;
+}
+
+.link-prompt input:focus { border-color: #6aa1ff; }
+.link-prompt input.invalid { border-color: #c00; background: #fff5f5; }
+
+.milkdown .link-prompt-target { background: #cfe1ff; }

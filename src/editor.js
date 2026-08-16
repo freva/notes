@@ -7,10 +7,11 @@
 // Mod-Enter to break out.
 //
 // No crepe features are registered — not `table`, which only adds floating
-// drag handles and add-row/column buttons on hover, and not `list-item`, whose
-// node view corrupts fast typing (see task-checkbox.js). What we add instead is
-// three small local plugins: input rules for `[]`/`[x]` and `[text](url)`, and
-// a click handler for the checkboxes.
+// drag handles and add-row/column buttons on hover, not `list-item`, whose node
+// view corrupts fast typing (see task-checkbox.js), and not `link-tooltip` (see
+// link-prompt.js). What we add instead is four small local plugins: input
+// rules for `[]`/`[x]` and `[text](url)`, a click handler for the checkboxes,
+// the Mod-K link prompt and the keymap that reaches it.
 //
 // To switch a crepe feature on, import it from '@milkdown/crepe/feature/<name>',
 // call crepe.addFeature() with it, and pull in its stylesheet the same way:
@@ -24,6 +25,8 @@ import { remarkPreserveEmptyLinePlugin } from '@milkdown/kit/preset/commonmark'
 import { wrapInTaskListInputRule } from '@milkdown/kit/preset/gfm'
 
 import { linkInputRule, taskListInputRule } from './input-rules.js'
+import { linkPrompt } from './link-prompt.js'
+import { formattingKeymap } from './shortcuts.js'
 import { taskCheckboxClick } from './task-checkbox.js'
 
 let instance = null
@@ -54,6 +57,8 @@ async function createInstance(root, markdown) {
     .use(taskListInputRule)
     .use(linkInputRule)
     .use(taskCheckboxClick)
+    .use(linkPrompt)
+    .use(formattingKeymap)
 
   // Every save re-serializes the whole note, so match the markers people
   // normally write by hand — otherwise remark's defaults turn every `- item`
