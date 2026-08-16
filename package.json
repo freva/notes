@@ -4,9 +4,16 @@
   "main": "server.js",
   "packageManager": "pnpm@11.2.2",
   "scripts": {
-    "start": "node server.js"
+    "start": "pnpm run build && node server.js",
+    "build": "esbuild src/editor.js --bundle --format=iife --global-name=NotesEditor --outfile=public/editor.bundle.js --minify",
+    "watch": "esbuild src/editor.js --bundle --format=iife --global-name=NotesEditor --outfile=public/editor.bundle.js --sourcemap --watch"
   },
   "dependencies": {
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@milkdown/crepe": "^7.22.1",
+    "@milkdown/kit": "^7.22.1",
+    "esbuild": "^0.28.2"
   }
 }

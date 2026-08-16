@@ -1,0 +1,4 @@
+# esbuild resolves its platform binary through optionalDependencies, so its
+# install script is not needed.
+allowBuilds:
+  esbuild: false

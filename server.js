@@ -5,6 +5,14 @@ const path = require('path');
 const NOTES_DIR = path.resolve(process.env.NOTES_DIR || './notes');
 const PORT = process.env.PORT || 3000;
 
+// public/editor.bundle.js is built from src/ and deliberately not in git.
+// `pnpm start` rebuilds it first; this only catches someone running the server
+// directly, which would otherwise serve a page whose editor 404s.
+if (!require('fs').existsSync(path.join(__dirname, 'public', 'editor.bundle.js'))) {
+  console.error('public/editor.bundle.js is missing. Use `pnpm start`, or run `pnpm run build` first.');
+  process.exit(1);
+}
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
