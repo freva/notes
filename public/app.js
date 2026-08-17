@@ -5,6 +5,15 @@
 const editor = document.getElementById('editor');
 const editorWrap = document.getElementById('editor-wrap');
 const treeEl = document.getElementById('tree');
+const newNoteBtn = document.getElementById('new-note');
+
+// Chords are written the way ProseMirror writes them, with 'Mod' standing for
+// Cmd on a Mac and Ctrl everywhere else, and are rendered a key at a time.
+const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
+
+const KEY_LABELS = IS_MAC
+  ? { Mod: '⌘', Alt: '⌥', Shift: '⇧' }
+  : { Mod: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
 
 let currentNotePath = null;
 let treeData = [];
@@ -16,6 +25,29 @@ const LAST_NOTE_KEY = 'notes.lastNote';
 
 NotesEditor.configure({ onChange: scheduleSave });
 
+const parentOf = (path) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+
+// ---------------- Context folder ----------------
+//
+// Where a new note goes when you do not say. Both opening a note and clicking a
+// folder set it, so it is whichever of the two you touched last — which is the
+// only rule that gets both "another one in here" and "one in that folder over
+// there" right without a dialog. '' is the notes root.
+
+let contextFolder = '';
+
+function setContextFolder(path) {
+  contextFolder = path;
+  for (const el of treeEl.querySelectorAll('.tree-entry.context')) el.classList.remove('context');
+  if (path) {
+    const entry = treeEl.querySelector(`.tree-entry[data-type="folder"][data-path="${CSS.escape(path)}"]`);
+    if (entry) entry.classList.add('context');
+  }
+  newNoteBtn.title = contextFolder
+    ? `New note in ${contextFolder} (${KEY_LABELS.Mod}+${KEY_LABELS.Alt}+N)`
+    : `New note (${KEY_LABELS.Mod}+${KEY_LABELS.Alt}+N)`;
+}
+
 // ---------------- Current note ----------------
 
 /// The one place currentNotePath is assigned: the window title and the
@@ -24,6 +56,7 @@ NotesEditor.configure({ onChange: scheduleSave });
 /// filename), and so can renaming or moving a folder above it.
 function setCurrentNote(path) {
   currentNotePath = path;
+  if (path) setContextFolder(parentOf(path));
   const name = path ? path.split('/').pop().replace(/\.md$/, '') : null;
   document.title = name ? `${name} - Notes` : 'Notes';
   try {
@@ -91,12 +124,60 @@ async function saveNote() {
   }
 }
 
+// A new note is a file on disk before it has a name or a word in it, and the
+// shortcut makes those cheap to create by accident. One that is still called
+// Untitled and still empty when you leave it is thrown away instead of being
+// left in the tree; the server checks both conditions again before unlinking.
+const UNTITLED_RE = /^Untitled( \(\d+\))?\.md$/;
+
+function isDiscardable() {
+  if (!currentNotePath || !NotesEditor.isLoaded()) return false;
+  if (!UNTITLED_RE.test(currentNotePath.split('/').pop())) return false;
+  return NotesEditor.getMarkdown().trim() === '';
+}
+
+function discardRequest(path, keepalive = false) {
+  return fetch('/api/note?path=' + encodeURIComponent(path), { method: 'DELETE', keepalive });
+}
+
+/// Writes the note out now, ahead of anything that depends on its path. The save
+/// is debounced by 800ms and Milkdown takes a moment to report a change at all,
+/// so without this a rename — the first line is the filename — can land in the
+/// middle of a move and leave it working from a path that no longer exists.
+async function flushCurrentNote() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await saveNote(); // Returns immediately when nothing has changed.
+}
+
+/// Everything that has to happen before currentNotePath stops being the note on
+/// screen: the pending save is flushed, or the note is dropped if it never
+/// became anything. Not called when the note has just been deleted — flushing
+/// then would write it straight back.
+async function leaveCurrentNote() {
+  if (!currentNotePath) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (isDiscardable()) {
+    try {
+      await discardRequest(currentNotePath);
+    } catch (err) {
+      console.error('Discard error:', err); // An empty note left behind is harmless.
+    }
+    return;
+  }
+  await saveNote();
+}
+
+/// True when `path` is the note on screen, whose live path is currentNotePath —
+/// the tree's copy of it goes stale as soon as a save renames the file.
+function isCurrentNote(path) {
+  return currentNotePath === path;
+}
+
 async function openNote(path) {
   if (currentNotePath === path) return;
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    await saveNote();
-  }
+  await leaveCurrentNote();
   try {
     const res = await fetch('/api/note?path=' + encodeURIComponent(path));
     if (!res.ok) throw new Error('Failed to load note');
@@ -147,6 +228,7 @@ function renderTreeLevel(items, container, parentPath) {
     entry.dataset.type = item.type;
     entry.draggable = true;
     if (item.path === currentNotePath) entry.classList.add('active');
+    if (item.type === 'folder' && item.path === contextFolder) entry.classList.add('context');
 
     const icon = document.createElement('span');
     icon.className = 'icon';
@@ -166,16 +248,18 @@ function renderTreeLevel(items, container, parentPath) {
         e.stopPropagation();
         createNote(item.path);
       });
-      const addFolderBtn = mkActionBtn('🗀', 'New subfolder', e => {
-        e.stopPropagation();
-        createFolder(item.path);
-      });
       const renameBtn = mkActionBtn('✎', 'Rename', e => {
         e.stopPropagation();
         startRename(entry, item);
       });
-      actions.append(addNoteBtn, addFolderBtn, renameBtn);
+      actions.append(addNoteBtn, renameBtn);
     }
+
+    const moveBtn = mkActionBtn('→', 'Move to…', e => {
+      e.stopPropagation();
+      promptMove(item);
+    });
+    actions.appendChild(moveBtn);
 
     const delBtn = mkActionBtn('×', 'Delete', e => {
       e.stopPropagation();
@@ -201,6 +285,7 @@ function renderTreeLevel(items, container, parentPath) {
         icon.textContent = collapsed ? '▾' : '▸';
         if (collapsed) expandedFolders.add(item.path);
         else expandedFolders.delete(item.path);
+        setContextFolder(item.path);
       });
       setupDropTarget(entry, item.path);
     } else {
@@ -334,6 +419,15 @@ function setupRootDropTarget() {
 }
 
 async function moveEntry(from, to) {
+  // A save must not land after the move: it would write the note back at its old
+  // path and leave a copy behind. This is the backstop for dragging a row, which
+  // can start from a note being typed into; flushing renames the file, so the
+  // note's own path is taken again afterwards.
+  const movingCurrent = isCurrentNote(from);
+  if (currentNotePath && (movingCurrent || currentNotePath.startsWith(from + '/'))) {
+    await flushCurrentNote();
+    if (movingCurrent) from = currentNotePath;
+  }
   try {
     const res = await fetch('/api/move', {
       method: 'PUT',
@@ -373,49 +467,124 @@ async function deleteEntry(item) {
   await loadTree();
 }
 
+/// `folder` can be a path that does not exist yet — the server makes every level
+/// of it — which is what lets the folder picker replace creating folders by hand.
 async function createNote(folder = '') {
   const res = await fetch('/api/note', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ folder }),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Create note failed');
+    return;
+  }
   const data = await res.json();
-  if (folder) expandedFolders.add(folder);
+  // Reveal it: every folder along the way has to be open for the new note to be
+  // visible in the tree, and the path may have just been created.
+  let prefix = '';
+  for (const part of data.path.split('/').slice(0, -1)) {
+    prefix = prefix ? `${prefix}/${part}` : part;
+    expandedFolders.add(prefix);
+  }
   await loadTree();
   await openNote(data.path);
 }
 
-async function createFolder(parent = '') {
-  const name = prompt('Folder name:');
-  if (!name) return;
-  const res = await fetch('/api/folder', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parent, name }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert(err.error || 'Create folder failed');
-    return;
+// ---------------- Folder picker ----------------
+
+function allFolderPaths(items = treeData, out = []) {
+  for (const item of items) {
+    if (item.type !== 'folder') continue;
+    out.push(item.path);
+    allFolderPaths(item.children, out);
   }
-  if (parent) expandedFolders.add(parent);
-  await loadTree();
+  return out;
+}
+
+async function promptCreateNote() {
+  const folder = await PathPrompt.open({
+    title: 'New note in…',
+    value: contextFolder,
+    folders: allFolderPaths(),
+  });
+  if (folder === null) return;
+  await createNote(folder);
+}
+
+async function promptMove(item) {
+  // The note on screen is written out before the dialog opens rather than after
+  // it closes: it has usually just been typed into, and a rename arriving while
+  // the dialog is up would leave the heading naming a file that is already gone.
+  const current = isCurrentNote(item.path);
+  if (current) {
+    await flushCurrentNote();
+    item = { ...item, path: currentNotePath, name: currentNotePath.split('/').pop() };
+  }
+  const name = item.type === 'note' ? item.name.replace(/\.md$/, '') : item.name;
+  const dest = await PathPrompt.open({
+    title: `Move ${name} to…`,
+    value: parentOf(item.path),
+    folders: allFolderPaths(),
+    // The server refuses these too; ruling them out here keeps them off the list
+    // instead of letting you pick one and be told no.
+    validate: (dest) => {
+      if (item.type !== 'folder') return null;
+      if (dest === item.path || dest.startsWith(item.path + '/')) {
+        return 'A folder cannot be moved inside itself';
+      }
+      return null;
+    },
+  });
+  if (dest === null) return;
+  // Taken again now the dialog is closed: nothing should have renamed the note in
+  // the meantime, but currentNotePath is the one path that is never stale.
+  await moveEntry(current ? currentNotePath : item.path, dest);
+}
+
+// ---------------- App shortcuts ----------------
+//
+// Mod-N and Mod-Shift-N are not available: browsers keep them for new window and
+// new private window and will not let a page have them. Mod-Shift-M is Firefox's
+// responsive design mode, which preventDefault does not get you out of either.
+// Hence the Mod-Alt-* family, which is also where the editor's block chords live.
+//
+// Matched on event.code — the physical key — because Alt is part of every chord
+// here and on a Mac Alt-N is a dead key, which arrives as event.key '˜'. The
+// printed letter is checked as well, for layouts that move N somewhere else.
+
+function isKey(e, code, letter) {
+  return e.code === code || e.key.toLowerCase() === letter;
+}
+
+function setupAppShortcuts() {
+  // Capture phase, so the chord is not swallowed by the editor's own keymap, and
+  // never while a dialog is up — the folder picker's input is inside one.
+  document.addEventListener('keydown', e => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (document.querySelector('dialog[open]')) return;
+
+    if (e.altKey && !e.shiftKey && isKey(e, 'KeyN', 'n')) {
+      e.preventDefault();
+      createNote(contextFolder);
+    } else if (e.altKey && e.shiftKey && isKey(e, 'KeyN', 'n')) {
+      e.preventDefault();
+      promptCreateNote();
+    } else if (e.altKey && !e.shiftKey && isKey(e, 'KeyM', 'm')) {
+      if (!currentNotePath) return;
+      e.preventDefault();
+      promptMove({ type: 'note', name: currentNotePath.split('/').pop(), path: currentNotePath });
+    }
+  }, true);
 }
 
 // ---------------- Keyboard shortcut help ----------------
 //
 // Everything below is only the help text — the bindings themselves come from
-// the presets CrepeBuilder registers (commonmark, gfm, history, indent) plus
-// src/shortcuts.js, so this table has to be kept in step with them by hand.
-//
-// Chords are written the way ProseMirror writes them, with 'Mod' standing for
-// Cmd on a Mac and Ctrl everywhere else, and are rendered per key.
-
-const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
-
-const KEY_LABELS = IS_MAC
-  ? { Mod: '⌘', Alt: '⌥', Shift: '⇧' }
-  : { Mod: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+// the presets CrepeBuilder registers (commonmark, gfm, history, indent), from
+// src/shortcuts.js and from setupAppShortcuts above, so this table has to be
+// kept in step with them by hand.
 
 const SHORTCUT_GROUPS = [
   {
@@ -442,10 +611,18 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
+    title: 'Notes',
+    items: [
+      { keys: ['Mod-Alt-N'], label: 'New note in the current folder' },
+      { keys: ['Mod-Alt-Shift-N'], label: 'New note in…' },
+      { keys: ['Mod-Alt-M'], label: 'Move this note to…' },
+    ],
+  },
+  {
     title: 'App',
     items: [
       { keys: ['Mod-/'], label: 'Show this list' },
-      { keys: ['Escape'], label: 'Close this dialog, or cancel the link prompt' },
+      { keys: ['Escape'], label: 'Close current dialog' },
     ],
   },
 ];
@@ -529,17 +706,27 @@ editor.addEventListener('click', (e) => {
   window.open(a.getAttribute('href'), '_blank', 'noopener');
 });
 
-document.getElementById('new-note').addEventListener('click', () => createNote(''));
-document.getElementById('new-folder').addEventListener('click', () => createFolder(''));
+// The button follows the context folder like the shortcut does; Alt-clicking it
+// asks where to put the note instead, the same as adding Shift to the chord.
+newNoteBtn.addEventListener('click', (e) => {
+  if (e.altKey) promptCreateNote();
+  else createNote(contextFolder);
+});
 
+setContextFolder('');
 setupRootDropTarget();
+setupAppShortcuts();
 setupShortcutHelp();
 
 window.addEventListener('beforeunload', () => {
   if (!currentNotePath || !NotesEditor.isLoaded()) return;
+  clearTimeout(saveTimer);
+  if (isDiscardable()) {
+    discardRequest(currentNotePath, true);
+    return;
+  }
   const content = NotesEditor.getMarkdown();
   if (content === lastSavedContent) return;
-  clearTimeout(saveTimer);
   fetch('/api/note', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

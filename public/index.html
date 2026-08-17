@@ -13,7 +13,6 @@
     <span>Notes</span>
     <div class="sidebar-actions">
       <button id="new-note" title="New note">+ Note</button>
-      <button id="new-folder" title="New folder">+ Folder</button>
       <button id="show-shortcuts" title="Keyboard shortcuts (?)">?</button>
     </div>
   </div>
@@ -32,7 +31,25 @@
   </div>
   <div id="shortcuts-body" tabindex="-1" autofocus></div>
 </dialog>
+<!-- "New note in…" and "Move to…" both come out here. The list of matches, and
+     the "Create …" row for a path that does not exist yet, are path-prompt.js. -->
+<dialog id="path-prompt">
+  <div class="dialog-header">
+    <h2 id="path-prompt-title"></h2>
+    <button id="path-prompt-close" title="Close">×</button>
+  </div>
+  <div id="path-prompt-body">
+    <input id="path-prompt-input" type="text" placeholder="journal/2026"
+           autocomplete="off" autocorrect="off" spellcheck="false" autofocus />
+    <div id="path-prompt-error"></div>
+    <div id="path-prompt-list"></div>
+    <div id="path-prompt-hint">
+      Folders are created as you name them. <kbd>Tab</kbd> completes, <kbd>Enter</kbd> confirms.
+    </div>
+  </div>
+</dialog>
 <script src="/editor.bundle.js"></script>
+<script src="/path-prompt.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

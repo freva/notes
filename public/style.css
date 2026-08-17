@@ -72,6 +72,12 @@ body { display: flex; }
 
 .tree-entry:hover { background: #e8e8e6; }
 .tree-entry.active { background: #d9d9d6; }
+
+/* The folder a new note would land in. Deliberately quieter than .active — it is
+   a hint about where the next thing goes, not a selection. */
+.tree-entry.context { box-shadow: inset 2px 0 0 #6aa1ff; }
+.tree-entry.context .name { color: #1b57b3; }
+
 .tree-entry.dragging { opacity: 0.5; }
 .tree-entry.drop-target { background: #cfe1ff; outline: 2px solid #6aa1ff; outline-offset: -2px; }
 
@@ -221,6 +227,97 @@ body { display: flex; }
 }
 
 .shortcut-sep { color: #aaa; margin: 0 4px 0 2px; }
+
+/* ---------- Folder picker ---------- */
+
+#path-prompt {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  border: 1px solid #d4d4d2;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  color: inherit;
+}
+
+#path-prompt::backdrop { background: rgba(0, 0, 0, 0.25); }
+
+#path-prompt-body { padding: 12px; }
+
+#path-prompt-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 8px;
+  border: 1px solid #d4d4d2;
+  border-radius: 4px;
+  outline: none;
+}
+
+#path-prompt-input:focus { border-color: #6aa1ff; }
+
+#path-prompt-error {
+  color: #c00;
+  font-size: 12px;
+  padding: 4px 2px 0;
+}
+
+#path-prompt-error:empty { display: none; }
+
+#path-prompt-list {
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.path-row.is-active { background: #cfe1ff; }
+.path-row.is-invalid { color: #999; cursor: default; }
+
+.path-row-icon {
+  width: 14px;
+  text-align: center;
+  color: #888;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.path-row-label { overflow: hidden; text-overflow: ellipsis; }
+
+.path-row-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+  border: 1px solid #d4d4d2;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+#path-prompt-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #999;
+}
+
+#path-prompt-hint kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 3px;
+  border: 1px solid #d4d4d2;
+  border-radius: 3px;
+  background: #f7f7f5;
+}
 
 /* ---------- Editor ---------- */
 /*

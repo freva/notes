@@ -70,13 +70,45 @@ app.get('/api/note', async (req, res) => {
   }
 });
 
-function sanitizeFilename(name) {
+function cleanName(name) {
   return name
     .replace(/^#+\s*/, '')
     .replace(/[\\/:*?"<>|]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 120) || 'Untitled';
+    .slice(0, 120);
+}
+
+function sanitizeFilename(name) {
+  return cleanName(name) || 'Untitled';
+}
+
+/// A folder path as the client's folder picker sends it: typed by hand, and
+/// quite possibly pointing at folders that do not exist yet. Every segment is
+/// cleaned like a filename, and empty segments simply disappear — '' is the
+/// notes root, which is a valid destination.
+function sanitizeRelPath(input) {
+  return String(input || '')
+    .split('/')
+    .filter(seg => seg.trim() !== '.' && seg.trim() !== '..')
+    .map(cleanName)
+    .filter(Boolean)
+    .join('/');
+}
+
+/// The folder a note is about to land in, brought into existence a level at a
+/// time. Typing a path in the folder picker is the only way to make a folder,
+/// so every folder in the tree was created here.
+async function ensureFolder(relPath) {
+  const abs = resolveSafe(relPath);
+  try {
+    await fs.mkdir(abs, { recursive: true });
+  } catch (err) {
+    // mkdir is happy with a folder that already exists, so getting here means a
+    // segment of the path is an existing file — a bad request, not a fault.
+    throw Object.assign(new Error(`Cannot use "${relPath}" as a folder`), { status: 400 });
+  }
+  return abs;
 }
 
 async function uniquePath(dir, base, ext) {
@@ -121,38 +153,35 @@ app.put('/api/note', async (req, res) => {
 app.post('/api/note', async (req, res) => {
   try {
     const { folder } = req.body || {};
-    const abs = resolveSafe(folder || '');
-    await fs.mkdir(abs, { recursive: true });
+    const abs = await ensureFolder(sanitizeRelPath(folder));
     const newAbs = await uniquePath(abs, 'Untitled', '.md');
     await fs.writeFile(newAbs, '', 'utf8');
     const relPath = path.relative(NOTES_DIR, newAbs).split(path.sep).join('/');
     res.json({ path: relPath });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
-app.post('/api/folder', async (req, res) => {
+/// Throwing away a note that never became one. A new note is a file on disk
+/// before it has a name or a word in it, so the client asks for this as soon as
+/// you navigate away from an untouched one. Both conditions are checked here and
+/// not just in the client, so that a stale path cannot delete real writing.
+app.delete('/api/note', async (req, res) => {
   try {
-    const { parent, name } = req.body || {};
-    if (!name) return res.status(400).json({ error: 'name required' });
-    const cleanName = sanitizeFilename(name);
-    const parentAbs = resolveSafe(parent || '');
-    let target = path.join(parentAbs, cleanName);
-    let i = 2;
-    while (true) {
-      try {
-        await fs.access(target);
-        target = path.join(parentAbs, `${cleanName} (${i})`);
-        i++;
-      } catch {
-        break;
-      }
+    const abs = resolveSafe(req.query.path);
+    if (!/^Untitled( \(\d+\))?\.md$/.test(path.basename(abs))) {
+      return res.status(400).json({ error: 'Only an unnamed note can be discarded' });
     }
-    await fs.mkdir(target, { recursive: true });
-    const relPath = path.relative(NOTES_DIR, target).split(path.sep).join('/');
-    res.json({ path: relPath });
+    const content = await fs.readFile(abs, 'utf8');
+    if (content.trim() !== '') {
+      return res.status(409).json({ error: 'Note is not empty' });
+    }
+    await fs.unlink(abs);
+    res.json({ discarded: true });
   } catch (err) {
+    // Already gone (two tabs, a double navigation) is the outcome we wanted.
+    if (err.code === 'ENOENT') return res.json({ discarded: false });
     res.status(500).json({ error: err.message });
   }
 });
@@ -188,14 +217,13 @@ app.put('/api/move', async (req, res) => {
     }
     const srcAbs = resolveSafe(from);
     if (srcAbs === NOTES_DIR) return res.status(400).json({ error: 'Cannot move root' });
-    const dstFolderAbs = resolveSafe(to);
-    if (to !== '') {
-      const dstStat = await fs.stat(dstFolderAbs);
-      if (!dstStat.isDirectory()) return res.status(400).json({ error: 'Destination must be a folder' });
-    }
+    // The destination is checked before it is created, so that a typo cannot
+    // leave a folder behind on a move that was going to be refused anyway.
+    const dstFolderAbs = resolveSafe(sanitizeRelPath(to));
     if (dstFolderAbs === srcAbs || dstFolderAbs.startsWith(srcAbs + path.sep)) {
       return res.status(400).json({ error: 'Cannot move a folder into itself' });
     }
+    await ensureFolder(sanitizeRelPath(to));
     const name = path.basename(srcAbs);
     const target = path.join(dstFolderAbs, name);
     if (target === srcAbs) return res.json({ path: from });
@@ -207,7 +235,7 @@ app.put('/api/move', async (req, res) => {
     const newPath = path.relative(NOTES_DIR, target).split(path.sep).join('/');
     res.json({ path: newPath });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
