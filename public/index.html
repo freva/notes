@@ -14,6 +14,7 @@
     <div class="sidebar-actions">
       <button id="new-note" title="New note">+ Note</button>
       <button id="new-folder" title="New folder">+ Folder</button>
+      <button id="show-shortcuts" title="Keyboard shortcuts (?)">?</button>
     </div>
   </div>
   <div id="tree"></div>
@@ -22,6 +23,15 @@
   <div id="editor"></div>
   <div id="empty-state">Select a note or create a new one.</div>
 </main>
+<!-- A native <dialog>, so Escape, the backdrop and the focus trap are free.
+     The rows are built in app.js from the table of shortcuts it keeps. -->
+<dialog id="shortcuts">
+  <div class="dialog-header">
+    <h2>Keyboard shortcuts</h2>
+    <button id="close-shortcuts" title="Close">×</button>
+  </div>
+  <div id="shortcuts-body" tabindex="-1" autofocus></div>
+</dialog>
 <script src="/editor.bundle.js"></script>
 <script src="/app.js"></script>
 </body>

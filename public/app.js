@@ -7,11 +7,57 @@ const editorWrap = document.getElementById('editor-wrap');
 const treeEl = document.getElementById('tree');
 
 let currentNotePath = null;
+let treeData = [];
 let saveTimer = null;
 let lastSavedContent = '';
 const expandedFolders = new Set();
 
+const LAST_NOTE_KEY = 'notes.lastNote';
+
 NotesEditor.configure({ onChange: scheduleSave });
+
+// ---------------- Current note ----------------
+
+/// The one place currentNotePath is assigned: the window title and the
+/// remembered note follow from it, and a note's path changes on more occasions
+/// than you would think — a save can rename the file (the first line is the
+/// filename), and so can renaming or moving a folder above it.
+function setCurrentNote(path) {
+  currentNotePath = path;
+  const name = path ? path.split('/').pop().replace(/\.md$/, '') : null;
+  document.title = name ? `${name} - Notes` : 'Notes';
+  try {
+    if (path) localStorage.setItem(LAST_NOTE_KEY, path);
+    else localStorage.removeItem(LAST_NOTE_KEY);
+  } catch (err) {
+    // Storage can be unavailable (private mode, blocked cookies). Reopening
+    // the last note is a convenience; the app works fine without it.
+  }
+}
+
+/// Reopen whatever was open last time, if it is still there. The path can have
+/// gone stale in the meantime — the note may have been deleted, or renamed by
+/// an edit in another tab — so check against the tree instead of firing off a
+/// request that 404s.
+async function restoreLastNote() {
+  let path = null;
+  try {
+    path = localStorage.getItem(LAST_NOTE_KEY);
+  } catch (err) {
+    return;
+  }
+  if (!path) return;
+  if (!noteInTree(path)) {
+    setCurrentNote(null);
+    return;
+  }
+  await openNote(path);
+}
+
+function noteInTree(path, items = treeData) {
+  return items.some(item =>
+    item.type === 'folder' ? noteInTree(path, item.children) : item.path === path);
+}
 
 // ---------------- Save & load ----------------
 
@@ -37,7 +83,7 @@ async function saveNote() {
     const data = await res.json();
     lastSavedContent = content;
     if (data.path && data.path !== pathBeingSaved && currentNotePath === pathBeingSaved) {
-      currentNotePath = data.path;
+      setCurrentNote(data.path);
     }
     await loadTree();
   } catch (err) {
@@ -55,7 +101,7 @@ async function openNote(path) {
     const res = await fetch('/api/note?path=' + encodeURIComponent(path));
     if (!res.ok) throw new Error('Failed to load note');
     const data = await res.json();
-    currentNotePath = path;
+    setCurrentNote(path);
 
     // Milkdown normalises markdown on the way through, so the serialised form
     // of what we just loaded is rarely byte-identical to the file. Treat that
@@ -75,7 +121,7 @@ async function openNote(path) {
 }
 
 async function closeNote() {
-  currentNotePath = null;
+  setCurrentNote(null);
   lastSavedContent = '';
   clearTimeout(saveTimer);
   saveTimer = null;
@@ -88,9 +134,9 @@ async function closeNote() {
 
 async function loadTree() {
   const res = await fetch('/api/tree');
-  const tree = await res.json();
+  treeData = await res.json();
   treeEl.innerHTML = '';
-  renderTreeLevel(tree, treeEl, '');
+  renderTreeLevel(treeData, treeEl, '');
 }
 
 function renderTreeLevel(items, container, parentPath) {
@@ -213,7 +259,7 @@ function startRename(entry, item) {
       }
       // Update currentNotePath if it was inside this folder
       if (currentNotePath && currentNotePath.startsWith(item.path + '/')) {
-        currentNotePath = data.path + currentNotePath.slice(item.path.length);
+        setCurrentNote(data.path + currentNotePath.slice(item.path.length));
       }
       await loadTree();
     } catch (err) {
@@ -301,7 +347,7 @@ async function moveEntry(from, to) {
     }
     const data = await res.json();
     if (currentNotePath === from || (currentNotePath && currentNotePath.startsWith(from + '/'))) {
-      currentNotePath = data.path + currentNotePath.slice(from.length);
+      setCurrentNote(data.path + currentNotePath.slice(from.length));
     }
     if (expandedFolders.has(from)) {
       expandedFolders.delete(from);
@@ -356,6 +402,123 @@ async function createFolder(parent = '') {
   await loadTree();
 }
 
+// ---------------- Keyboard shortcut help ----------------
+//
+// Everything below is only the help text — the bindings themselves come from
+// the presets CrepeBuilder registers (commonmark, gfm, history, indent) plus
+// src/shortcuts.js, so this table has to be kept in step with them by hand.
+//
+// Chords are written the way ProseMirror writes them, with 'Mod' standing for
+// Cmd on a Mac and Ctrl everywhere else, and are rendered per key.
+
+const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
+
+const KEY_LABELS = IS_MAC
+  ? { Mod: '⌘', Alt: '⌥', Shift: '⇧' }
+  : { Mod: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+
+const SHORTCUT_GROUPS = [
+  {
+    title: 'Text',
+    items: [
+      { keys: ['Mod-B'], label: 'Bold' },
+      { keys: ['Mod-I'], label: 'Italic' },
+      { keys: ['Mod-E'], label: 'Inline code' },
+      { keys: ['Mod-Shift-X', 'Mod-Alt-X'], label: 'Strikethrough' },
+      { keys: ['Mod-K'], label: 'Link the selection' },
+      { keys: ['Mod-Z'], label: 'Undo' },
+      { keys: ['Mod-Shift-Z', 'Mod-Y'], label: 'Redo' },
+    ],
+  },
+  {
+    title: 'Blocks',
+    items: [
+      { keys: ['Mod-Alt-0'], label: 'Plain paragraph' },
+      { keys: ['Mod-Alt-1', 'Mod-Alt-6'], sep: '…', label: 'Heading 1 to 6' },
+      { keys: ['Mod-Alt-7'], label: 'Numbered list' },
+      { keys: ['Mod-Alt-8'], label: 'Bullet list' },
+      { keys: ['Mod-Shift-B'], label: 'Block quote' },
+      { keys: ['Mod-Alt-C'], label: 'Code block' },
+    ],
+  },
+  {
+    title: 'App',
+    items: [
+      { keys: ['Mod-/'], label: 'Show this list' },
+      { keys: ['Escape'], label: 'Close this dialog, or cancel the link prompt' },
+    ],
+  },
+];
+
+/// One table for every group — group titles are full-width rows inside it —
+/// so that the key column is as wide as the widest chord and the descriptions
+/// line up all the way down.
+function renderShortcuts(body) {
+  const table = document.createElement('table');
+  table.className = 'shortcut-table';
+
+  for (const group of SHORTCUT_GROUPS) {
+    const heading = table.insertRow().insertCell();
+    heading.className = 'shortcut-group';
+    heading.colSpan = 2;
+    heading.textContent = group.title;
+
+    for (const item of group.items) {
+      const row = table.insertRow();
+      const keys = row.insertCell();
+      keys.className = 'shortcut-keys';
+      item.keys.forEach((chord, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'shortcut-sep';
+          sep.textContent = item.sep || '/';
+          keys.appendChild(sep);
+        }
+        for (const key of chord.split('-')) {
+          const kbd = document.createElement('kbd');
+          kbd.textContent = KEY_LABELS[key] || key;
+          keys.appendChild(kbd);
+        }
+      });
+      row.insertCell().textContent = item.label;
+    }
+  }
+
+  body.appendChild(table);
+}
+
+const shortcutsDialog = document.getElementById('shortcuts');
+
+function setupShortcutHelp() {
+  renderShortcuts(document.getElementById('shortcuts-body'));
+
+  const open = () => { if (!shortcutsDialog.open) shortcutsDialog.showModal(); };
+  const showBtn = document.getElementById('show-shortcuts');
+  showBtn.title = `Keyboard shortcuts (${IS_MAC ? '⌘/' : 'Ctrl+/'})`;
+  showBtn.addEventListener('click', open);
+  document.getElementById('close-shortcuts').addEventListener('click', () => shortcutsDialog.close());
+  // A click that lands on the dialog itself came down on the backdrop.
+  shortcutsDialog.addEventListener('click', e => {
+    if (e.target === shortcutsDialog) shortcutsDialog.close();
+  });
+
+  // Mod-/ works wherever the focus happens to be, note included: nothing in the
+  // presets binds it, no browser reserves it, and a modifier chord can never be
+  // text someone meant to type — which a bare ? can, so that is not offered as
+  // an alias. Capture phase, because the link prompt's input stops keydown from
+  // propagating to us.
+  //
+  // Shift is deliberately not part of the test. On layouts where / sits on a
+  // shifted key — Norwegian and German put it on Shift-7 — the chord is
+  // physically Mod-Shift-7, and the browser still reports event.key as '/'.
+  document.addEventListener('keydown', e => {
+    if (e.key !== '/' || !(e.metaKey || e.ctrlKey) || e.altKey) return;
+    e.preventDefault();
+    if (shortcutsDialog.open) shortcutsDialog.close();
+    else open();
+  }, true);
+}
+
 // ---------------- Wiring ----------------
 
 // Links are inside a contenteditable, so a plain click just moves the caret.
@@ -370,6 +533,7 @@ document.getElementById('new-note').addEventListener('click', () => createNote('
 document.getElementById('new-folder').addEventListener('click', () => createFolder(''));
 
 setupRootDropTarget();
+setupShortcutHelp();
 
 window.addEventListener('beforeunload', () => {
   if (!currentNotePath || !NotesEditor.isLoaded()) return;
@@ -384,4 +548,4 @@ window.addEventListener('beforeunload', () => {
   });
 });
 
-loadTree();
+loadTree().then(restoreLastNote);
