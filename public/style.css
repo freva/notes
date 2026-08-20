@@ -134,12 +134,14 @@ body { display: flex; }
   border-left: 1px solid #e0e0de;
 }
 
-/* ---------- Shortcut help dialog ---------- */
+/* ---------- Dialogs ---------- */
+/*
+ * The box itself is the same for all three — the shortcut list and the two
+ * pickers — and only the width differs.
+ */
 
-#shortcuts {
-  width: 520px;
+.modal {
   max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 64px);
   padding: 0;
   border: 1px solid #d4d4d2;
   border-radius: 8px;
@@ -147,7 +149,14 @@ body { display: flex; }
   color: inherit;
 }
 
-#shortcuts::backdrop { background: rgba(0, 0, 0, 0.25); }
+.modal::backdrop { background: rgba(0, 0, 0, 0.25); }
+
+#shortcuts {
+  width: 520px;
+  max-height: calc(100vh - 64px);
+}
+
+#path-prompt, #note-prompt { width: 460px; }
 
 .dialog-header {
   display: flex;
@@ -228,23 +237,16 @@ body { display: flex; }
 
 .shortcut-sep { color: #aaa; margin: 0 4px 0 2px; }
 
-/* ---------- Folder picker ---------- */
+/* ---------- Pickers ---------- */
+/*
+ * A filter field over a list of rows: the folder picker (path-prompt.js) and
+ * the note switcher (note-prompt.js) are the same thing over different rows,
+ * so everything here is shared by both.
+ */
 
-#path-prompt {
-  width: 460px;
-  max-width: calc(100vw - 32px);
-  padding: 0;
-  border: 1px solid #d4d4d2;
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
-  color: inherit;
-}
+.picker-body { padding: 12px; }
 
-#path-prompt::backdrop { background: rgba(0, 0, 0, 0.25); }
-
-#path-prompt-body { padding: 12px; }
-
-#path-prompt-input {
+.picker-input {
   width: 100%;
   font-family: inherit;
   font-size: 14px;
@@ -254,23 +256,23 @@ body { display: flex; }
   outline: none;
 }
 
-#path-prompt-input:focus { border-color: #6aa1ff; }
+.picker-input:focus { border-color: #6aa1ff; }
 
-#path-prompt-error {
+.picker-error {
   color: #c00;
   font-size: 12px;
   padding: 4px 2px 0;
 }
 
-#path-prompt-error:empty { display: none; }
+.picker-error:empty { display: none; }
 
-#path-prompt-list {
+.picker-list {
   margin-top: 8px;
   max-height: 260px;
   overflow-y: auto;
 }
 
-.path-row {
+.picker-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -281,10 +283,10 @@ body { display: flex; }
   white-space: nowrap;
 }
 
-.path-row.is-active { background: #cfe1ff; }
-.path-row.is-invalid { color: #999; cursor: default; }
+.picker-row.is-active { background: #cfe1ff; }
+.picker-row.is-invalid { color: #999; cursor: default; }
 
-.path-row-icon {
+.picker-row-icon {
   width: 14px;
   text-align: center;
   color: #888;
@@ -292,9 +294,9 @@ body { display: flex; }
   flex-shrink: 0;
 }
 
-.path-row-label { overflow: hidden; text-overflow: ellipsis; }
+.picker-row-label { overflow: hidden; text-overflow: ellipsis; }
 
-.path-row-tag {
+.picker-row-tag {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -304,13 +306,23 @@ body { display: flex; }
   padding: 0 4px;
 }
 
-#path-prompt-hint {
+/* Where a note lives, pushed to the far end of its row. */
+.picker-row-aside {
+  margin-left: auto;
+  padding-left: 10px;
+  color: #999;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-hint {
   margin-top: 10px;
   font-size: 11px;
   color: #999;
 }
 
-#path-prompt-hint kbd {
+.picker-hint kbd {
   font-family: inherit;
   font-size: 10px;
   padding: 0 3px;

@@ -99,23 +99,23 @@ window.PathPrompt = (function () {
     listEl.innerHTML = '';
     rows.forEach((row, i) => {
       const el = document.createElement('div');
-      el.className = 'path-row';
+      el.className = 'picker-row';
       if (i === active) el.classList.add('is-active');
       if (row.error) el.classList.add('is-invalid');
 
       const icon = document.createElement('span');
-      icon.className = 'path-row-icon';
+      icon.className = 'picker-row-icon';
       icon.textContent = ICONS[row.kind];
       el.appendChild(icon);
 
       const label = document.createElement('span');
-      label.className = 'path-row-label';
+      label.className = 'picker-row-label';
       label.textContent = row.label;
       el.appendChild(label);
 
       if (row.kind === 'create') {
         const tag = document.createElement('span');
-        tag.className = 'path-row-tag';
+        tag.className = 'picker-row-tag';
         tag.textContent = 'new folder';
         el.appendChild(tag);
       }

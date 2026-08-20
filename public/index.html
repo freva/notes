@@ -24,7 +24,7 @@
 </main>
 <!-- A native <dialog>, so Escape, the backdrop and the focus trap are free.
      The rows are built in app.js from the table of shortcuts it keeps. -->
-<dialog id="shortcuts">
+<dialog id="shortcuts" class="modal">
   <div class="dialog-header">
     <h2>Keyboard shortcuts</h2>
     <button id="close-shortcuts" title="Close">×</button>
@@ -33,23 +33,37 @@
 </dialog>
 <!-- "New note in…" and "Move to…" both come out here. The list of matches, and
      the "Create …" row for a path that does not exist yet, are path-prompt.js. -->
-<dialog id="path-prompt">
+<dialog id="path-prompt" class="modal">
   <div class="dialog-header">
     <h2 id="path-prompt-title"></h2>
     <button id="path-prompt-close" title="Close">×</button>
   </div>
-  <div id="path-prompt-body">
-    <input id="path-prompt-input" type="text" placeholder="journal/2026"
+  <div class="picker-body">
+    <input id="path-prompt-input" class="picker-input" type="text" placeholder="journal/2026"
            autocomplete="off" autocorrect="off" spellcheck="false" autofocus />
-    <div id="path-prompt-error"></div>
-    <div id="path-prompt-list"></div>
-    <div id="path-prompt-hint">
+    <div id="path-prompt-error" class="picker-error"></div>
+    <div id="path-prompt-list" class="picker-list"></div>
+    <div class="picker-hint">
       Folders are created as you name them. <kbd>Tab</kbd> completes, <kbd>Enter</kbd> confirms.
     </div>
   </div>
 </dialog>
+<!-- The note switcher (Mod-Alt-O). Same picker, over notes — see note-prompt.js. -->
+<dialog id="note-prompt" class="modal">
+  <div class="dialog-header">
+    <h2>Switch to…</h2>
+    <button id="note-prompt-close" title="Close">×</button>
+  </div>
+  <div class="picker-body">
+    <input id="note-prompt-input" class="picker-input" type="text" placeholder="Note name or folder"
+           autocomplete="off" autocorrect="off" spellcheck="false" autofocus />
+    <div id="note-prompt-error" class="picker-error"></div>
+    <div id="note-prompt-list" class="picker-list"></div>
+  </div>
+</dialog>
 <script src="/editor.bundle.js"></script>
 <script src="/path-prompt.js"></script>
+<script src="/note-prompt.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

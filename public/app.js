@@ -458,13 +458,33 @@ async function moveEntry(from, to) {
 
 async function deleteEntry(item) {
   if (!confirm(`Delete ${item.name}?`)) return;
-  await fetch('/api/entry?path=' + encodeURIComponent(item.path), { method: 'DELETE' });
-  if (currentNotePath === item.path ||
-      (item.type === 'folder' && currentNotePath && currentNotePath.startsWith(item.path + '/'))) {
-    await closeNote();
+  const hitsCurrent = currentNotePath === item.path ||
+      (item.type === 'folder' && currentNotePath && currentNotePath.startsWith(item.path + '/'));
+  // A queued save is dropped before the request goes out, not after: it is up to
+  // 800ms away and would otherwise write the note back once the file is gone.
+  // Dropped rather than flushed, because flushing is what could rename the file
+  // out from under the path this delete is aimed at.
+  if (hitsCurrent) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
   }
+  await fetch('/api/entry?path=' + encodeURIComponent(item.path), { method: 'DELETE' });
+  if (hitsCurrent) await closeNote();
   expandedFolders.delete(item.path);
   await loadTree();
+}
+
+/// The note on screen, deleted the same way its × in the tree deletes it, so the
+/// confirm, the closing and the tree refresh stay in one place. currentNotePath
+/// rather than the tree's copy of it: a save renames the file, and the tree can
+/// be a moment behind.
+function deleteCurrentNote() {
+  if (!currentNotePath) return;
+  return deleteEntry({
+    type: 'note',
+    name: currentNotePath.split('/').pop(),
+    path: currentNotePath,
+  });
 }
 
 /// `folder` can be a path that does not exist yet — the server makes every level
@@ -543,6 +563,31 @@ async function promptMove(item) {
   await moveEntry(current ? currentNotePath : item.path, dest);
 }
 
+// ---------------- Note switcher ----------------
+
+function allNotes(items = treeData, out = []) {
+  for (const item of items) {
+    if (item.type === 'folder') allNotes(item.children, out);
+    else out.push(item);
+  }
+  return out;
+}
+
+async function promptSwitchNote() {
+  // Written out and the tree reread before the list is built: the note on screen
+  // has usually just been typed into, and its first line is its filename, so the
+  // name in the list is otherwise the one it had when it was opened.
+  await flushCurrentNote();
+  await loadTree();
+  const path = await NotePrompt.open({
+    // Switching to the note you are on is a no-op, so it is not offered — which
+    // also means the first row is always somewhere else to go.
+    notes: allNotes().filter(note => note.path !== currentNotePath),
+  });
+  if (path === null) return;
+  await openNote(path);
+}
+
 // ---------------- App shortcuts ----------------
 //
 // Mod-N and Mod-Shift-N are not available: browsers keep them for new window and
@@ -575,6 +620,15 @@ function setupAppShortcuts() {
       if (!currentNotePath) return;
       e.preventDefault();
       promptMove({ type: 'note', name: currentNotePath.split('/').pop(), path: currentNotePath });
+    } else if (e.altKey && !e.shiftKey && isKey(e, 'KeyO', 'o')) {
+      e.preventDefault();
+      promptSwitchNote();
+    } else if (!e.altKey && e.shiftKey && e.key === 'Backspace') {
+      // Backspace needs no isKey: it is in the same place on every layout, and
+      // nothing is printed on it to match against.
+      if (!currentNotePath) return;
+      e.preventDefault();
+      deleteCurrentNote();
     }
   }, true);
 }
@@ -615,7 +669,9 @@ const SHORTCUT_GROUPS = [
     items: [
       { keys: ['Mod-Alt-N'], label: 'New note in the current folder' },
       { keys: ['Mod-Alt-Shift-N'], label: 'New note in…' },
+      { keys: ['Mod-Alt-O'], label: 'Switch to another note…' },
       { keys: ['Mod-Alt-M'], label: 'Move this note to…' },
+      { keys: ['Mod-Shift-Backspace'], label: 'Delete this note' },
     ],
   },
   {
