@@ -16,12 +16,13 @@ const KEY_LABELS = IS_MAC
   : { Mod: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
 
 let currentNotePath = null;
+// mtime of the file as of the last time this tab read or wrote it, for telling a
+// change made elsewhere from one made here when the tab comes back into view.
+let currentNoteMtime = null;
 let treeData = [];
 let saveTimer = null;
 let lastSavedContent = '';
 const expandedFolders = new Set();
-
-const LAST_NOTE_KEY = 'notes.lastNote';
 
 NotesEditor.configure({ onChange: scheduleSave });
 
@@ -50,46 +51,81 @@ function setContextFolder(path) {
 
 // ---------------- Current note ----------------
 
-/// The one place currentNotePath is assigned: the window title and the
-/// remembered note follow from it, and a note's path changes on more occasions
-/// than you would think — a save can rename the file (the first line is the
-/// filename), and so can renaming or moving a folder above it.
-function setCurrentNote(path) {
+/// The one place currentNotePath is assigned: the window title and the URL
+/// follow from it, and a note's path changes on more occasions than you would
+/// think — a save can rename the file (the first line is the filename), and so
+/// can renaming or moving a folder above it. Those replace the URL in place;
+/// only opening a note by hand (`push`) makes a history entry to go back to.
+function setCurrentNote(path, { push = false } = {}) {
   currentNotePath = path;
   if (path) setContextFolder(parentOf(path));
   const name = path ? path.split('/').pop().replace(/\.md$/, '') : null;
   document.title = name ? `${name} - Notes` : 'Notes';
-  try {
-    if (path) localStorage.setItem(LAST_NOTE_KEY, path);
-    else localStorage.removeItem(LAST_NOTE_KEY);
-  } catch (err) {
-    // Storage can be unavailable (private mode, blocked cookies). Reopening
-    // the last note is a convenience; the app works fine without it.
-  }
+  syncUrl(path, push);
 }
 
-/// Reopen whatever was open last time, if it is still there. The path can have
-/// gone stale in the meantime — the note may have been deleted, or renamed by
-/// an edit in another tab — so check against the tree instead of firing off a
-/// request that 404s.
-async function restoreLastNote() {
-  let path = null;
-  try {
-    path = localStorage.getItem(LAST_NOTE_KEY);
-  } catch (err) {
-    return;
-  }
+// ---------------- URL ----------------
+//
+// The open note is the URL: /n/<path to the note>, so a reload lands on the same
+// note, a URL can be bookmarked or pasted into another tab, and back and forward
+// walk through the notes opened in this one. The server answers every /n/* with
+// the app; the /n/ prefix is what keeps note paths clear of /api and of the
+// files in public/. No note is /.
+
+const NOTE_URL_PREFIX = '/n/';
+
+function noteFromUrl() {
+  if (!location.pathname.startsWith(NOTE_URL_PREFIX)) return null;
+  const path = decodeURIComponent(location.pathname.slice(NOTE_URL_PREFIX.length));
+  return path || null;
+}
+
+function urlFor(path) {
+  if (!path) return '/';
+  // Segment by segment, so that the slashes stay slashes and anything else a
+  // browser would mangle — spaces, #, ? — is escaped.
+  return NOTE_URL_PREFIX + path.split('/').map(encodeURIComponent).join('/');
+}
+
+function syncUrl(path, push) {
+  if (noteFromUrl() === (path || null)) return;
+  if (push) history.pushState(null, '', urlFor(path));
+  else history.replaceState(null, '', urlFor(path));
+}
+
+/// Open the note the URL names, if it is still there. The path can have gone
+/// stale — the note may have been deleted, or renamed by an edit in another
+/// tab — so check against the tree instead of firing off a request that 404s.
+async function openNoteFromUrl() {
+  const path = noteFromUrl();
   if (!path) return;
-  if (!noteInTree(path)) {
+  if (!findNote(path)) {
     setCurrentNote(null);
     return;
   }
-  await openNote(path);
+  await openNote(path, { push: false });
 }
 
-function noteInTree(path, items = treeData) {
-  return items.some(item =>
-    item.type === 'folder' ? noteInTree(path, item.children) : item.path === path);
+/// Back and forward. Not pushed, or every step back would add a step forward.
+window.addEventListener('popstate', async () => {
+  const path = noteFromUrl();
+  if (!path) {
+    if (currentNotePath) await closeNote();
+  } else if (path !== currentNotePath) {
+    await openNote(path, { push: false });
+  }
+});
+
+function findNote(path, items = treeData) {
+  for (const item of items) {
+    if (item.type === 'folder') {
+      const found = findNote(path, item.children);
+      if (found) return found;
+    } else if (item.path === path) {
+      return item;
+    }
+  }
+  return null;
 }
 
 // ---------------- Save & load ----------------
@@ -115,8 +151,9 @@ async function saveNote() {
     if (!res.ok) throw new Error('Save failed');
     const data = await res.json();
     lastSavedContent = content;
-    if (data.path && data.path !== pathBeingSaved && currentNotePath === pathBeingSaved) {
-      setCurrentNote(data.path);
+    if (currentNotePath === pathBeingSaved) {
+      currentNoteMtime = data.mtime;
+      if (data.path && data.path !== pathBeingSaved) setCurrentNote(data.path);
     }
     await loadTree();
   } catch (err) {
@@ -175,34 +212,47 @@ function isCurrentNote(path) {
   return currentNotePath === path;
 }
 
-async function openNote(path) {
+async function fetchNote(path) {
+  const res = await fetch('/api/note?path=' + encodeURIComponent(path));
+  if (!res.ok) throw new Error('Failed to load note');
+  return res.json();
+}
+
+/// Puts `data` (as /api/note returns it) into the editor as the current note.
+/// Milkdown normalises markdown on the way through, so the serialised form of
+/// what was just loaded is rarely byte-identical to the file. That normalised
+/// form is the saved baseline, otherwise merely opening a note would look like
+/// an edit and rewrite the file. False when another load superseded this one.
+async function showNote(data) {
+  const normalized = await NotesEditor.load(editor, data.content);
+  if (normalized === null) return false;
+  lastSavedContent = normalized;
+  currentNoteMtime = data.mtime;
+  editor.classList.add('visible');
+  editorWrap.classList.add('has-note');
+  return true;
+}
+
+async function openNote(path, { push = true } = {}) {
   if (currentNotePath === path) return;
   await leaveCurrentNote();
   try {
-    const res = await fetch('/api/note?path=' + encodeURIComponent(path));
-    if (!res.ok) throw new Error('Failed to load note');
-    const data = await res.json();
-    setCurrentNote(path);
-
-    // Milkdown normalises markdown on the way through, so the serialised form
-    // of what we just loaded is rarely byte-identical to the file. Treat that
-    // normalised form as the saved baseline, otherwise merely opening a note
-    // would look like an edit and rewrite the file.
-    const normalized = await NotesEditor.load(editor, data.content);
-    if (normalized === null) return; // another openNote superseded this one
-    lastSavedContent = normalized;
-
-    editor.classList.add('visible');
-    editorWrap.classList.add('has-note');
+    const data = await fetchNote(path);
+    setCurrentNote(path, { push });
+    if (!(await showNote(data))) return;
     await loadTree();
     NotesEditor.focus();
   } catch (err) {
     console.error(err);
+    // Reached from a history entry whose note is gone: the URL should not go
+    // on naming a note that is not the one on screen.
+    syncUrl(currentNotePath, false);
   }
 }
 
 async function closeNote() {
   setCurrentNote(null);
+  currentNoteMtime = null;
   lastSavedContent = '';
   clearTimeout(saveTimer);
   saveTimer = null;
@@ -210,6 +260,63 @@ async function closeNote() {
   editor.classList.remove('visible');
   editorWrap.classList.remove('has-note');
 }
+
+// ---------------- Refresh on return ----------------
+//
+// Notes can be edited in another tab, or in an editor on the .md files; nothing
+// pushes those changes here. Coming back to this tab is the moment to look:
+// the tree is reread, and the note on screen is reloaded if the file has been
+// written since this tab last read or wrote it.
+
+let refreshing = null;
+
+function refreshFromDisk() {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      // Whatever was typed here goes out first: the mtime comparison is then
+      // against a file this tab has finished writing, and an edit that was still
+      // pending cannot be thrown away by the reload — it wins, as it would have
+      // once the debounced save fired.
+      await flushCurrentNote();
+      await loadTree();
+      if (!currentNotePath) return;
+      const entry = findNote(currentNotePath);
+      if (!entry) {
+        // Deleted, or renamed by an edit elsewhere. Closing rather than keeping
+        // it: the next save here would otherwise recreate the file at a path
+        // nothing else knows about.
+        await closeNote();
+        return;
+      }
+      if (entry.mtime !== currentNoteMtime) await reloadCurrentNote();
+    } catch (err) {
+      console.error('Refresh error:', err);
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function reloadCurrentNote() {
+  const path = currentNotePath;
+  const data = await fetchNote(path);
+  if (currentNotePath !== path) return; // switched away while it was in flight
+  // A reload replaces the editor instance, which drops focus and the caret.
+  // Focus is given back when it was in the note; the caret cannot be.
+  const hadFocus = editor.contains(document.activeElement);
+  if (!(await showNote(data))) return;
+  if (hadFocus) NotesEditor.focus();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshFromDisk();
+});
+// Alt-tabbing back from another window does not change visibility when this
+// one stayed on screen, so focus is watched too. Back-to-back with the event
+// above on a tab switch, which `refreshing` folds into one pass.
+window.addEventListener('focus', () => { refreshFromDisk(); });
 
 // ---------------- Sidebar / tree ----------------
 
@@ -791,4 +898,4 @@ window.addEventListener('beforeunload', () => {
   });
 });
 
-loadTree().then(restoreLastNote);
+loadTree().then(openNoteFromUrl);

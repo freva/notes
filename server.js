@@ -17,6 +17,14 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// The open note is in the URL as /n/<path to the note>, so a reload or a pasted
+// link lands on the same note. The client reads the path back out; here every
+// such URL is simply the app. The /n/ prefix keeps note paths clear of /api and
+// of the files in public/ — a note called app.js must not shadow the script.
+app.get('/n/{*note}', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 function resolveSafe(relPath) {
   const normalized = path.normalize(relPath || '').replace(/^[/\\]+/, '');
   const abs = path.resolve(NOTES_DIR, normalized);
@@ -44,7 +52,10 @@ async function buildTree(dir, relBase = '') {
         children: await buildTree(path.join(dir, entry.name), rel),
       });
     } else if (entry.name.endsWith('.md')) {
-      result.push({ type: 'note', name: entry.name, path: rel });
+      // mtime lets a client that has been in the background tell whether the
+      // note it has open was written in the meantime, without refetching it.
+      const stat = await fs.stat(path.join(dir, entry.name));
+      result.push({ type: 'note', name: entry.name, path: rel, mtime: stat.mtimeMs });
     }
   }
   return result;
@@ -63,8 +74,11 @@ app.get('/api/tree', async (req, res) => {
 app.get('/api/note', async (req, res) => {
   try {
     const abs = resolveSafe(req.query.path);
+    // stat before read: a write landing in between then makes the client reload
+    // once more than it needed to, rather than believe it has the newer text.
+    const stat = await fs.stat(abs);
     const content = await fs.readFile(abs, 'utf8');
-    res.json({ content });
+    res.json({ content, mtime: stat.mtimeMs });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }
@@ -139,12 +153,16 @@ app.put('/api/note', async (req, res) => {
     const desiredName = sanitizeFilename(firstLine);
     const currentName = path.basename(abs, '.md');
     let finalPath = relPath;
+    let finalAbs = abs;
     if (desiredName && desiredName !== currentName) {
-      const newAbs = await uniquePath(path.dirname(abs), desiredName, '.md');
-      await fs.rename(abs, newAbs);
-      finalPath = path.relative(NOTES_DIR, newAbs).split(path.sep).join('/');
+      finalAbs = await uniquePath(path.dirname(abs), desiredName, '.md');
+      await fs.rename(abs, finalAbs);
+      finalPath = path.relative(NOTES_DIR, finalAbs).split(path.sep).join('/');
     }
-    res.json({ path: finalPath });
+    // The client keeps this as the mtime of what it has on screen, so that its
+    // own save does not look like someone else's change on the next refresh.
+    const stat = await fs.stat(finalAbs);
+    res.json({ path: finalPath, mtime: stat.mtimeMs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
