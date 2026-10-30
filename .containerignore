@@ -1,0 +1,7 @@
+.git
+.idea
+node_modules
+.pnpm-store
+notes
+public/editor.bundle.js
+public/editor.bundle.js.map
