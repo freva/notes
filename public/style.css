@@ -617,3 +617,133 @@ body { display: flex; }
 .link-prompt input.invalid { border-color: #c00; background: #fff5f5; }
 
 #editor .link-prompt-target { background: #cfe1ff; }
+
+/* ---------- Small screens & touch ---------- */
+/*
+ * Below 720px the sidebar becomes a drawer that slides in over the note, and a
+ * top bar takes its place with the menu button, the note's name and a new-note
+ * button. app.js toggles body.sidebar-open.
+ */
+
+#topbar,
+#sidebar-backdrop { display: none; }
+
+@media (max-width: 720px) {
+  /* 100% is the largest viewport on mobile browsers, so the bottom of the
+     page would sit under the address bar; dvh follows it as it comes and goes. */
+  html, body { height: 100dvh; }
+
+  #sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(85vw, 320px);
+    border-right: none;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.18);
+    transform: translateX(-100%);
+    /* Hidden as well as off-screen, so a closed drawer takes no focus. */
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
+  body.sidebar-open #sidebar {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease;
+  }
+
+  body.sidebar-open #sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 6px 6px;
+    background: rgba(250, 250, 250, 0.95);
+    border-bottom: 1px solid #e3e3e3;
+  }
+
+  #topbar button {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    line-height: 1;
+    color: #444;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  #topbar button:active { background: rgba(0, 0, 0, 0.08); }
+
+  #topbar-title {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-weight: 600;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #tree,
+  #editor-wrap { overscroll-behavior: contain; }
+
+  #editor .cm-content { padding: 20px 18px 50vh; }
+
+  #editor .cm-md-h1 { font-size: 1.75em; }
+  #editor .cm-md-h2 { font-size: 1.4em; }
+}
+
+/* Fingers rather than a mouse: bigger rows and buttons, and inputs at 16px,
+   below which iOS zooms the page in when one is focused. */
+@media (pointer: coarse) {
+  .sidebar-header { padding: 8px 12px; }
+
+  .sidebar-actions { gap: 6px; }
+
+  .sidebar-actions button {
+    font-size: 14px;
+    padding: 6px 12px;
+  }
+
+  #tree { font-size: 15px; }
+
+  .tree-entry { padding: 8px 12px; }
+
+  .entry-action {
+    font-size: 16px;
+    padding: 6px 9px;
+  }
+
+  .picker-row { padding: 9px 8px; font-size: 15px; }
+
+  .picker-input,
+  .rename-input,
+  .link-prompt input { font-size: 16px; }
+
+  .dialog-header button { padding: 6px 10px; font-size: 22px; }
+}
+
+/* Nothing to hover with, so a row's buttons are shown on the row that was
+   tapped last: the open note, or the folder just opened or closed. */
+@media (hover: none) {
+  .tree-entry:hover { background: none; }
+  .tree-entry.active { background: #d9d9d6; }
+  .tree-entry.active .entry-actions,
+  .tree-entry.context .entry-actions { display: inline-flex; }
+}

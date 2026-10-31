@@ -6,6 +6,7 @@ const editor = document.getElementById('editor');
 const editorWrap = document.getElementById('editor-wrap');
 const treeEl = document.getElementById('tree');
 const newNoteBtn = document.getElementById('new-note');
+const topbarTitle = document.getElementById('topbar-title');
 
 // Chords are written the way CodeMirror writes them, with 'Mod' standing for
 // Cmd on a Mac and Ctrl everywhere else, and are rendered a key at a time.
@@ -61,6 +62,7 @@ function setCurrentNote(path, { push = false } = {}) {
   if (path) setContextFolder(parentOf(path));
   const name = path ? path.split('/').pop().replace(/\.md$/, '') : null;
   document.title = name ? `${name} - Notes` : 'Notes';
+  topbarTitle.textContent = name || 'Notes';
   syncUrl(path, push);
 }
 
@@ -230,7 +232,12 @@ async function showNote(data) {
   return true;
 }
 
-async function openNote(path, { push = true } = {}) {
+// On a touch screen focusing the editor brings up the keyboard, which is in the
+// way when a note is opened to read it. A new note is focused regardless: it is
+// opened to be typed into.
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
+
+async function openNote(path, { push = true, focus = !IS_TOUCH } = {}) {
   if (currentNotePath === path) return;
   await leaveCurrentNote();
   try {
@@ -238,7 +245,7 @@ async function openNote(path, { push = true } = {}) {
     setCurrentNote(path, { push });
     if (!(await showNote(data))) return;
     await loadTree();
-    NotesEditor.focus();
+    if (focus) NotesEditor.focus();
   } catch (err) {
     console.error(err);
     // Reached from a history entry whose note is gone: the URL should not go
@@ -256,6 +263,7 @@ async function closeNote() {
   await NotesEditor.unload(editor);
   editor.classList.remove('visible');
   editorWrap.classList.remove('has-note');
+  if (NARROW.matches) openSidebar();
 }
 
 // ---------------- Refresh on return ----------------
@@ -394,7 +402,10 @@ function renderTreeLevel(items, container, parentPath) {
       setupDropTarget(entry, item.path);
     } else {
       icon.textContent = '·';
-      entry.addEventListener('click', () => openNote(item.path));
+      entry.addEventListener('click', () => {
+        closeSidebar();
+        openNote(item.path);
+      });
     }
   }
 }
@@ -613,7 +624,8 @@ async function createNote(folder = '') {
     expandedFolders.add(prefix);
   }
   await loadTree();
-  await openNote(data.path);
+  closeSidebar();
+  await openNote(data.path, { focus: true });
 }
 
 // ---------------- Folder picker ----------------
@@ -857,6 +869,27 @@ function setupShortcutHelp() {
   }, true);
 }
 
+// ---------------- Sidebar drawer ----------------
+//
+// Below 720px (style.css) the sidebar is a drawer over the note, open while the
+// body has .sidebar-open. On a wide screen the class does nothing, so none of
+// this needs to know which layout is showing.
+
+const NARROW = matchMedia('(max-width: 720px)');
+
+function openSidebar() { document.body.classList.add('sidebar-open'); }
+function closeSidebar() { document.body.classList.remove('sidebar-open'); }
+
+document.getElementById('open-sidebar').addEventListener('click', openSidebar);
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
+document.getElementById('topbar-new-note').addEventListener('click', () => createNote(contextFolder));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('sidebar-open') &&
+      !document.querySelector('dialog[open]')) {
+    closeSidebar();
+  }
+});
+
 // ---------------- Wiring ----------------
 
 // The button follows the context folder like the shortcut does; Alt-clicking it
@@ -888,4 +921,8 @@ window.addEventListener('beforeunload', () => {
   });
 });
 
-loadTree().then(openNoteFromUrl);
+loadTree().then(openNoteFromUrl).then(() => {
+  // With no note to show, a narrow screen would be an empty page with a menu
+  // button; start with the list of notes instead.
+  if (!currentNotePath && NARROW.matches) openSidebar();
+});

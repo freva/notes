@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
 <title>Notes</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="stylesheet" href="/style.css" />
@@ -18,7 +18,16 @@
   </div>
   <div id="tree"></div>
 </aside>
+<!-- On a narrow screen the sidebar is a drawer over the note; this is what
+     closes it when tapped. Hidden on wide screens, see style.css. -->
+<div id="sidebar-backdrop"></div>
 <main id="editor-wrap">
+  <!-- Only shown on narrow screens, where the sidebar is not. -->
+  <header id="topbar">
+    <button id="open-sidebar" type="button" title="Notes" aria-label="Show notes">☰</button>
+    <span id="topbar-title">Notes</span>
+    <button id="topbar-new-note" type="button" title="New note" aria-label="New note">＋</button>
+  </header>
   <div id="editor"></div>
   <div id="empty-state">Select a note or create a new one.</div>
 </main>
