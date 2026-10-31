@@ -6,8 +6,9 @@ const editor = document.getElementById('editor');
 const editorWrap = document.getElementById('editor-wrap');
 const treeEl = document.getElementById('tree');
 const newNoteBtn = document.getElementById('new-note');
+const topbarTitle = document.getElementById('topbar-title');
 
-// Chords are written the way ProseMirror writes them, with 'Mod' standing for
+// Chords are written the way CodeMirror writes them, with 'Mod' standing for
 // Cmd on a Mac and Ctrl everywhere else, and are rendered a key at a time.
 const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
 
@@ -61,6 +62,7 @@ function setCurrentNote(path, { push = false } = {}) {
   if (path) setContextFolder(parentOf(path));
   const name = path ? path.split('/').pop().replace(/\.md$/, '') : null;
   document.title = name ? `${name} - Notes` : 'Notes';
+  topbarTitle.textContent = name || 'Notes';
   syncUrl(path, push);
 }
 
@@ -178,8 +180,7 @@ function discardRequest(path, keepalive = false) {
 }
 
 /// Writes the note out now, ahead of anything that depends on its path. The save
-/// is debounced by 800ms and Milkdown takes a moment to report a change at all,
-/// so without this a rename — the first line is the filename — can land in the
+/// is debounced by 800ms, so without this a rename — the first line is the filename — can land in the
 /// middle of a move and leave it working from a path that no longer exists.
 async function flushCurrentNote() {
   clearTimeout(saveTimer);
@@ -219,10 +220,8 @@ async function fetchNote(path) {
 }
 
 /// Puts `data` (as /api/note returns it) into the editor as the current note.
-/// Milkdown normalises markdown on the way through, so the serialised form of
-/// what was just loaded is rarely byte-identical to the file. That normalised
-/// form is the saved baseline, otherwise merely opening a note would look like
-/// an edit and rewrite the file. False when another load superseded this one.
+/// What the editor reports back is the saved baseline, so merely opening a
+/// note never looks like an edit. False when another load superseded this one.
 async function showNote(data) {
   const normalized = await NotesEditor.load(editor, data.content);
   if (normalized === null) return false;
@@ -233,7 +232,12 @@ async function showNote(data) {
   return true;
 }
 
-async function openNote(path, { push = true } = {}) {
+// On a touch screen focusing the editor brings up the keyboard, which is in the
+// way when a note is opened to read it. A new note is focused regardless: it is
+// opened to be typed into.
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
+
+async function openNote(path, { push = true, focus = !IS_TOUCH } = {}) {
   if (currentNotePath === path) return;
   await leaveCurrentNote();
   try {
@@ -241,7 +245,7 @@ async function openNote(path, { push = true } = {}) {
     setCurrentNote(path, { push });
     if (!(await showNote(data))) return;
     await loadTree();
-    NotesEditor.focus();
+    if (focus) NotesEditor.focus();
   } catch (err) {
     console.error(err);
     // Reached from a history entry whose note is gone: the URL should not go
@@ -259,6 +263,7 @@ async function closeNote() {
   await NotesEditor.unload(editor);
   editor.classList.remove('visible');
   editorWrap.classList.remove('has-note');
+  if (NARROW.matches) openSidebar();
 }
 
 // ---------------- Refresh on return ----------------
@@ -397,7 +402,10 @@ function renderTreeLevel(items, container, parentPath) {
       setupDropTarget(entry, item.path);
     } else {
       icon.textContent = '·';
-      entry.addEventListener('click', () => openNote(item.path));
+      entry.addEventListener('click', () => {
+        closeSidebar();
+        openNote(item.path);
+      });
     }
   }
 }
@@ -616,7 +624,8 @@ async function createNote(folder = '') {
     expandedFolders.add(prefix);
   }
   await loadTree();
-  await openNote(data.path);
+  closeSidebar();
+  await openNote(data.path, { focus: true });
 }
 
 // ---------------- Folder picker ----------------
@@ -743,9 +752,8 @@ function setupAppShortcuts() {
 // ---------------- Keyboard shortcut help ----------------
 //
 // Everything below is only the help text — the bindings themselves come from
-// the presets CrepeBuilder registers (commonmark, gfm, history, indent), from
-// src/shortcuts.js and from setupAppShortcuts above, so this table has to be
-// kept in step with them by hand.
+// src/commands.js, CodeMirror's history keymap and setupAppShortcuts above, so
+// this table has to be kept in step with them by hand.
 
 const SHORTCUT_GROUPS = [
   {
@@ -756,6 +764,7 @@ const SHORTCUT_GROUPS = [
       { keys: ['Mod-E'], label: 'Inline code' },
       { keys: ['Mod-Shift-X', 'Mod-Alt-X'], label: 'Strikethrough' },
       { keys: ['Mod-K'], label: 'Link the selection' },
+      { keys: ['Mod-Click'], label: 'Open a link' },
       { keys: ['Mod-Z'], label: 'Undo' },
       { keys: ['Mod-Shift-Z', 'Mod-Y'], label: 'Redo' },
     ],
@@ -769,6 +778,7 @@ const SHORTCUT_GROUPS = [
       { keys: ['Mod-Alt-8'], label: 'Bullet list' },
       { keys: ['Mod-Shift-B'], label: 'Block quote' },
       { keys: ['Mod-Alt-C'], label: 'Code block' },
+      { keys: ['Tab', 'Shift-Tab'], label: 'Indent / outdent list item' },
     ],
   },
   {
@@ -859,15 +869,28 @@ function setupShortcutHelp() {
   }, true);
 }
 
-// ---------------- Wiring ----------------
+// ---------------- Sidebar drawer ----------------
+//
+// Below 720px (style.css) the sidebar is a drawer over the note, open while the
+// body has .sidebar-open. On a wide screen the class does nothing, so none of
+// this needs to know which layout is showing.
 
-// Links are inside a contenteditable, so a plain click just moves the caret.
-editor.addEventListener('click', (e) => {
-  const a = e.target.closest && e.target.closest('a[href]');
-  if (!a || !editor.contains(a)) return;
-  e.preventDefault();
-  window.open(a.getAttribute('href'), '_blank', 'noopener');
+const NARROW = matchMedia('(max-width: 720px)');
+
+function openSidebar() { document.body.classList.add('sidebar-open'); }
+function closeSidebar() { document.body.classList.remove('sidebar-open'); }
+
+document.getElementById('open-sidebar').addEventListener('click', openSidebar);
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
+document.getElementById('topbar-new-note').addEventListener('click', () => createNote(contextFolder));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('sidebar-open') &&
+      !document.querySelector('dialog[open]')) {
+    closeSidebar();
+  }
 });
+
+// ---------------- Wiring ----------------
 
 // The button follows the context folder like the shortcut does; Alt-clicking it
 // asks where to put the note instead, the same as adding Shift to the chord.
@@ -898,4 +921,8 @@ window.addEventListener('beforeunload', () => {
   });
 });
 
-loadTree().then(openNoteFromUrl);
+loadTree().then(openNoteFromUrl).then(() => {
+  // With no note to show, a narrow screen would be an empty page with a menu
+  // button; start with the list of notes instead.
+  if (!currentNotePath && NARROW.matches) openSidebar();
+});

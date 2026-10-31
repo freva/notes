@@ -10,7 +10,7 @@ RUN corepack pnpm install --frozen-lockfile && corepack pnpm build
 FROM docker.io/library/golang:alpine AS server
 WORKDIR /src
 COPY . .
-COPY --from=web /src/public/editor.bundle.js public/
+COPY --from=web /src/public/editor/ public/editor/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /notes .
 
 FROM scratch

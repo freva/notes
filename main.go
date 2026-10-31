@@ -21,7 +21,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-// public/editor.bundle.js is built from src/ and deliberately not in git, so it
+// public/editor/ is built from src/ and deliberately not in git, so it
 // must be built (`pnpm run build`) before `go build` for it to be embedded.
 //
 //go:embed public
@@ -42,8 +42,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := fs.Stat(public, "editor.bundle.js"); err != nil {
-		log.Fatal("public/editor.bundle.js is missing. Run `pnpm run build` before `go build`.")
+	if _, err := fs.Stat(public, "editor/editor.js"); err != nil {
+		log.Fatal("public/editor/editor.js is missing. Run `pnpm run build` before `go build`.")
 	}
 
 	if err := os.MkdirAll(notesDir, 0o777); err != nil {
