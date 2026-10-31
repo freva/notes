@@ -7,7 +7,7 @@ const editorWrap = document.getElementById('editor-wrap');
 const treeEl = document.getElementById('tree');
 const newNoteBtn = document.getElementById('new-note');
 
-// Chords are written the way ProseMirror writes them, with 'Mod' standing for
+// Chords are written the way CodeMirror writes them, with 'Mod' standing for
 // Cmd on a Mac and Ctrl everywhere else, and are rendered a key at a time.
 const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
 
@@ -178,8 +178,7 @@ function discardRequest(path, keepalive = false) {
 }
 
 /// Writes the note out now, ahead of anything that depends on its path. The save
-/// is debounced by 800ms and Milkdown takes a moment to report a change at all,
-/// so without this a rename — the first line is the filename — can land in the
+/// is debounced by 800ms, so without this a rename — the first line is the filename — can land in the
 /// middle of a move and leave it working from a path that no longer exists.
 async function flushCurrentNote() {
   clearTimeout(saveTimer);
@@ -219,10 +218,8 @@ async function fetchNote(path) {
 }
 
 /// Puts `data` (as /api/note returns it) into the editor as the current note.
-/// Milkdown normalises markdown on the way through, so the serialised form of
-/// what was just loaded is rarely byte-identical to the file. That normalised
-/// form is the saved baseline, otherwise merely opening a note would look like
-/// an edit and rewrite the file. False when another load superseded this one.
+/// What the editor reports back is the saved baseline, so merely opening a
+/// note never looks like an edit. False when another load superseded this one.
 async function showNote(data) {
   const normalized = await NotesEditor.load(editor, data.content);
   if (normalized === null) return false;
@@ -743,9 +740,8 @@ function setupAppShortcuts() {
 // ---------------- Keyboard shortcut help ----------------
 //
 // Everything below is only the help text — the bindings themselves come from
-// the presets CrepeBuilder registers (commonmark, gfm, history, indent), from
-// src/shortcuts.js and from setupAppShortcuts above, so this table has to be
-// kept in step with them by hand.
+// src/commands.js, CodeMirror's history keymap and setupAppShortcuts above, so
+// this table has to be kept in step with them by hand.
 
 const SHORTCUT_GROUPS = [
   {
@@ -756,6 +752,7 @@ const SHORTCUT_GROUPS = [
       { keys: ['Mod-E'], label: 'Inline code' },
       { keys: ['Mod-Shift-X', 'Mod-Alt-X'], label: 'Strikethrough' },
       { keys: ['Mod-K'], label: 'Link the selection' },
+      { keys: ['Mod-Click'], label: 'Open a link' },
       { keys: ['Mod-Z'], label: 'Undo' },
       { keys: ['Mod-Shift-Z', 'Mod-Y'], label: 'Redo' },
     ],
@@ -769,6 +766,7 @@ const SHORTCUT_GROUPS = [
       { keys: ['Mod-Alt-8'], label: 'Bullet list' },
       { keys: ['Mod-Shift-B'], label: 'Block quote' },
       { keys: ['Mod-Alt-C'], label: 'Code block' },
+      { keys: ['Tab', 'Shift-Tab'], label: 'Indent / outdent list item' },
     ],
   },
   {
@@ -860,14 +858,6 @@ function setupShortcutHelp() {
 }
 
 // ---------------- Wiring ----------------
-
-// Links are inside a contenteditable, so a plain click just moves the caret.
-editor.addEventListener('click', (e) => {
-  const a = e.target.closest && e.target.closest('a[href]');
-  if (!a || !editor.contains(a)) return;
-  e.preventDefault();
-  window.open(a.getAttribute('href'), '_blank', 'noopener');
-});
 
 // The button follows the context folder like the shortcut does; Alt-clicking it
 // asks where to put the note instead, the same as adding Shift to the chord.

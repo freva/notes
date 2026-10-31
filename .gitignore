@@ -2,5 +2,4 @@
 node_modules/
 notes/
 
-public/editor.bundle.js
-public/editor.bundle.js.map
+public/editor/

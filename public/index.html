@@ -61,9 +61,12 @@
     <div id="note-prompt-list" class="picker-list"></div>
   </div>
 </dialog>
-<script src="/editor.bundle.js"></script>
-<script src="/path-prompt.js"></script>
-<script src="/note-prompt.js"></script>
-<script src="/app.js"></script>
+<!-- The editor is an ES module, split so a code block's language is fetched
+     only when a note has one. Module and deferred scripts run in document
+     order once parsing is done, so app.js still finds NotesEditor ready. -->
+<script type="module" src="/editor/editor.js"></script>
+<script defer src="/path-prompt.js"></script>
+<script defer src="/note-prompt.js"></script>
+<script defer src="/app.js"></script>
 </body>
 </html>
